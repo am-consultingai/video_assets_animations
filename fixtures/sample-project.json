@@ -1,0 +1,35 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "schema_version": 1,
+  "updated_at": "2026-04-12T00:00:00.000Z",
+  "canvas": { "aspectRatioId": "9:16", "resolutionId": "1080p", "fps": 30 },
+  "brand_kit": {
+    "colors": {
+      "primary": "#0f172a",
+      "secondary": "#334155",
+      "surface": "#020617",
+      "onSurface": "#f8fafc",
+      "accent": "#f472b6",
+      "muted": "#94a3b8"
+    },
+    "typography": {
+      "display": { "fontId": "bebas", "weight": 400 },
+      "body": { "fontId": "inter", "weight": 600 },
+      "accent": { "fontId": "outfit", "weight": 700 }
+    },
+    "fontScale": 1,
+    "radii": { "sm": 6, "md": 10, "lg": 16 },
+    "motionIntensity": "medium"
+  },
+  "template_id": "minimal-lower-third",
+  "template_definition_version": "1.0.0",
+  "field_values": {
+    "name": "مقدّم RTL",
+    "title": "اختبار النص",
+    "accentColor": "#f472b6",
+    "barWidth": 64
+  },
+  "template_overrides": {},
+  "scene_duration_ms": 4200,
+  "ui": { "layoutDirection": "rtl", "showSafeZones": true, "categoryFilter": "", "search": "" }
+}
