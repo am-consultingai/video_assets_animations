@@ -1,40 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ASPECT_RATIO_OPTIONS, FPS_OPTIONS, getCanvasPixels, RESOLUTION_OPTIONS } from "./canvas/presets";
+import { flushSync } from "react-dom";
+import { ASPECT_RATIO_OPTIONS, getCanvasPixels } from "./canvas/presets";
 import { runExport, waitForRenderReady } from "./export/pipelines";
 import { buildObsHtml } from "./export/htmlObs";
-import {
-  COMPOSITION_ENTER_OPTIONS,
-  COMPOSITION_EXIT_OPTIONS,
-  DEFAULT_COMPOSITION,
-  getCompositionLayerStyle,
-  sanitizeComposition,
-} from "./engine/compositionMotion";
+import { getCompositionLayerStyle, sanitizeComposition } from "./engine/compositionMotion";
 import { buildCompositionFilter, buildLiftBoxShadow, sanitizeSceneEffects } from "./engine/sceneEffects";
 import { motionScale, resolveTheme } from "./engine/resolveTheme";
-import { FONT_CATALOG } from "./fonts/catalog";
 import { hydrateProject } from "./project/hydrate";
 import { validateFields } from "./project/validate";
 import { loadProject, saveProject } from "./storage/projectDb";
-import { ConfettiCanvas } from "./components/ConfettiCanvas";
-import { FireCanvas } from "./components/FireCanvas";
-import { GrainCanvas } from "./components/GrainCanvas";
-import { LightSweepCanvas } from "./components/LightSweepCanvas";
-import { VignetteOverlay } from "./components/VignetteOverlay";
 import { InspectorCard } from "./components/InspectorCard";
-import { SafeZonesOverlay } from "./components/SafeZonesOverlay";
-import { StaggerShell } from "./components/StaggerShell";
+import { TemplateTextFieldsDock } from "./components/TemplateTextFieldsDock";
+import { Toast } from "./components/Toast";
 import { isChromiumBased } from "./app/browserSupport";
+import { useMobileLayout } from "./hooks/useMobileLayout";
+import {
+  BrandInspectorBody,
+  CanvasInspectorBody,
+  CompositionInspectorBody,
+  FieldsInspectorBody,
+  LookAtmosphereInspectorBody,
+  OverridesInspectorBody,
+  ProjectFilesInspectorBody,
+  SceneEffectsInspectorBody,
+} from "./inspector/InspectorBodies";
+import { MobileShell } from "./mobile/MobileShell";
+import type { MobileAdjustSectionId } from "./mobile/adjustSections";
+import { PreviewPanel } from "./panels/PreviewPanel";
+import { TemplatesPanel } from "./panels/TemplatesPanel";
 import { allTemplateEntries, getTemplateEntry } from "./templates/registry";
 import { DEFAULT_BRAND_KIT } from "./brand/defaultKit";
-import { mergeFieldDefaults } from "./project/defaults";
-import type {
-  CompositionSettings,
-  CompositionStylePreset,
-  ExportFormatId,
-  FieldValues,
-  ProjectState,
-  SceneEffectsSettings,
-} from "./types";
+import type { CompositionSettings, ExportFormatId, ProjectState, SceneEffectsSettings } from "./types";
 import "./styles.css";
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -65,6 +61,12 @@ export default function App() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number>(0);
   const lastTsRef = useRef<number>(0);
+
+  const isMobileLayout = useMobileLayout();
+  const [mobileTemplatesOpen, setMobileTemplatesOpen] = useState(false);
+  const [mobileAdjustOpen, setMobileAdjustOpen] = useState(false);
+  const [mobileAdjustSection, setMobileAdjustSection] = useState<MobileAdjustSectionId | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const reducedMotion = useMemo(
     () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -116,8 +118,13 @@ export default function App() {
   }, [project, loaded]);
 
   const entry = project ? getTemplateEntry(project.template_id) : undefined;
+  const effectiveAspectRatioId = project
+    ? isMobileLayout
+      ? ("1:1" as const)
+      : project.canvas.aspectRatioId
+    : ("16:9" as const);
   const pixels = project
-    ? getCanvasPixels(project.canvas.aspectRatioId, project.canvas.resolutionId)
+    ? getCanvasPixels(isMobileLayout ? "1:1" : project.canvas.aspectRatioId, project.canvas.resolutionId)
     : { width: 1920, height: 1080 };
 
   const durationMs =
@@ -217,6 +224,11 @@ export default function App() {
     [durationMs],
   );
 
+  const dismissToast = useCallback(() => setToastMessage(null), []);
+  const onDesktopOnlyAspectToast = useCallback(() => {
+    setToastMessage("Aspect ratio changes are available on desktop.");
+  }, []);
+
   const handleExport = useCallback(async () => {
     if (!project || !entry || !previewRef.current) return;
     const issues = validateFields(entry.definition.fields, project.field_values);
@@ -224,6 +236,13 @@ export default function App() {
       setValidationIssues(issues);
       return;
     }
+    if (isMobileLayout) {
+      flushSync(() => {
+        setMobileTemplatesOpen(false);
+        setMobileAdjustOpen(false);
+      });
+    }
+    await waitForRenderReady();
     const node = previewRef.current;
     const flatBackground =
       flatMode === "transparent"
@@ -303,7 +322,41 @@ export default function App() {
     theme,
     seekTimeMs,
     updateProject,
+    isMobileLayout,
   ]);
+
+  const openExportModal = useCallback(() => {
+    if (isMobileLayout) {
+      setToastMessage("Export is only available on desktop.");
+      return;
+    }
+    setExportOpen(true);
+  }, [isMobileLayout]);
+
+  const closeMobileMenus = useCallback(() => {
+    setMobileTemplatesOpen(false);
+    setMobileAdjustOpen(false);
+    setMobileAdjustSection(null);
+  }, []);
+
+  const toggleMobileTemplates = useCallback(() => {
+    setMobileTemplatesOpen((was) => {
+      if (was) return false;
+      setMobileAdjustOpen(false);
+      return true;
+    });
+  }, []);
+
+  const toggleMobileAdjust = useCallback(() => {
+    setMobileAdjustOpen((was) => {
+      if (was) {
+        setMobileAdjustSection(null);
+        return false;
+      }
+      setMobileTemplatesOpen(false);
+      return true;
+    });
+  }, []);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -371,946 +424,227 @@ export default function App() {
     return hay.includes(search);
   });
 
-  const scale = Math.min(1, Math.min(920 / pixels.width, 620 / pixels.height));
+  const storedAspectLabel =
+    ASPECT_RATIO_OPTIONS.find((o) => o.id === project.canvas.aspectRatioId)?.label ?? project.canvas.aspectRatioId;
+  const chipText = isMobileLayout
+    ? `${pixels.width}×${pixels.height} · 1:1 · ${project.canvas.fps}fps${
+        project.canvas.aspectRatioId !== "1:1" ? ` · desktop ${storedAspectLabel}` : ""
+      }`
+    : `${pixels.width}×${pixels.height} · ${project.canvas.aspectRatioId} · ${project.canvas.fps}fps`;
 
   const TemplateComponent = entry.Component;
 
-  return (
-    <div className="app-shell">
-      <aside className="panel panel-left" style={{ padding: 10 }}>
-        <h2>Templates</h2>
-        <div className="filters-row">
-          <div className="field field-compact">
-            <label htmlFor="cat">Category</label>
-            <select
-              id="cat"
-              value={filterCat}
-              onChange={(e) => updateProject({ ui: { ...project.ui, categoryFilter: e.target.value || undefined } })}
-            >
-              <option value="">All</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field field-compact">
-            <label htmlFor="q">Search</label>
-            <input
-              id="q"
-              type="text"
-              placeholder="Tags…"
-              value={project.ui?.search ?? ""}
-              onChange={(e) => updateProject({ ui: { ...project.ui, search: e.target.value } })}
+  const templatesPanelEl = (
+    <TemplatesPanel
+      project={project}
+      updateProject={updateProject}
+      filtered={filtered}
+      categories={categories}
+      filterCat={filterCat}
+      isMobileLayout={isMobileLayout}
+      setTimeMs={setTimeMs}
+      setPlaying={setPlaying}
+    />
+  );
+
+
+  const previewPanelEl = (
+    <PreviewPanel
+      previewRef={previewRef}
+      pixels={pixels}
+      isMobileLayout={isMobileLayout}
+      chipText={chipText}
+      playing={playing}
+      setPlaying={setPlaying}
+      setTimeMs={setTimeMs}
+      onExportClick={openExportModal}
+      projectRtl={project.ui?.layoutDirection === "rtl"}
+      theme={theme}
+      compositionLayerStyle={compositionLayerStyle}
+      compositionFilterCss={compositionFilterCss}
+      liftShadowCss={liftShadowCss}
+      sceneEffects={sceneEffects}
+      fireAccent={fireAccent}
+      timeMs={timeMs}
+      durationMs={durationMs}
+      motionTimeScale={motionTimeScale}
+      reducedMotion={reducedMotion}
+      TemplateComponent={TemplateComponent}
+      entryDefinition={entry.definition}
+      fieldValues={project.field_values}
+      showSafeZones={project.ui?.showSafeZones ?? false}
+      effectiveAspectRatioId={effectiveAspectRatioId}
+    />
+  );
+
+  const onLicenses = () => alert("See THIRD_PARTY_NOTICES.md in the repository for font and icon attribution.");
+
+  const renderAdjustSection = (id: MobileAdjustSectionId) => {
+    const inner = (() => {
+      switch (id) {
+        case "canvas":
+          return (
+            <CanvasInspectorBody
+              project={project}
+              updateProject={updateProject}
+              durationMs={durationMs}
+              entry={entry}
+              isMobileLayout={isMobileLayout}
+              effectiveAspectRatioId={effectiveAspectRatioId}
+              storedAspectLabel={storedAspectLabel}
+              onDesktopOnlyAspectToast={onDesktopOnlyAspectToast}
             />
-          </div>
-        </div>
+          );
+        case "composition":
+          return (
+            <CompositionInspectorBody
+              project={project}
+              updateProject={updateProject}
+              composition={composition}
+              patchComposition={patchComposition}
+              motionTimeScale={motionTimeScale}
+              reducedMotion={reducedMotion}
+            />
+          );
+        case "scene":
+          return <SceneEffectsInspectorBody sceneEffects={sceneEffects} patchEffects={patchEffects} />;
+        case "look":
+          return <LookAtmosphereInspectorBody sceneEffects={sceneEffects} patchEffects={patchEffects} />;
+        case "brand":
+          return <BrandInspectorBody project={project} updateProject={updateProject} />;
+        case "overrides":
+          return <OverridesInspectorBody project={project} updateProject={updateProject} />;
+        case "fields":
+          return (
+            <FieldsInspectorBody
+              project={project}
+              updateProject={updateProject}
+              entry={entry}
+              validationIssues={validationIssues}
+            />
+          );
+        case "project-files":
+          return (
+            <ProjectFilesInspectorBody
+              exportJson={exportJson}
+              importJson={importJson}
+              saveError={saveError}
+              onLicenses={onLicenses}
+            />
+          );
+        default: {
+          const _never: never = id;
+          return _never;
+        }
+      }
+    })();
+    return <div className="inspector-card-body inspector-drill-body">{inner}</div>;
+  };
 
-        <div style={{ marginTop: 10 }}>
-          {filtered.map((e) => (
-            <button
-              key={e.definition.id}
-              type="button"
-              className={`gallery-item${e.definition.id === project.template_id ? " active" : ""}`}
-              onClick={() => {
-                const d = e.definition;
-                updateProject((prev) => ({
-                  ...prev,
-                  template_id: d.id,
-                  template_definition_version: d.version,
-                  field_values: mergeFieldDefaults(d, prev.field_values),
-                  scene_duration_ms: undefined,
-                }));
-                setTimeMs(0);
-                setPlaying(true);
-              }}
-            >
-              <div className="g-name">{e.definition.name}</div>
-              <div className="g-meta">
-                {e.definition.category} · {e.definition.defaultDurationMs / 1000}s
-              </div>
-            </button>
-          ))}
-        </div>
-      </aside>
+  const desktopInspector = (
+    <aside className="panel panel-right">
+      <div className="panel-right-inner">
+        <InspectorCard title="Canvas" defaultOpen>
+          <CanvasInspectorBody
+            project={project}
+            updateProject={updateProject}
+            durationMs={durationMs}
+            entry={entry}
+            isMobileLayout={false}
+            effectiveAspectRatioId={effectiveAspectRatioId}
+            storedAspectLabel={storedAspectLabel}
+            onDesktopOnlyAspectToast={onDesktopOnlyAspectToast}
+          />
+        </InspectorCard>
 
-      <main className="preview-column">
-        <div className="preview-toolbar">
-          <span className="chip">
-            {pixels.width}×{pixels.height} · {project.canvas.aspectRatioId} · {project.canvas.fps}fps
-          </span>
-          <button type="button" className="btn btn-primary" onClick={() => setPlaying((p) => !p)}>
-            {playing ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setTimeMs(0);
-              setPlaying(false);
-            }}
-          >
-            Stop
-          </button>
-          <button type="button" className="btn" onClick={() => setExportOpen(true)}>
-            Export…
-          </button>
-        </div>
-        <div className="preview-stage-wrap">
-          <div
-            style={{
-              width: pixels.width * scale,
-              height: pixels.height * scale,
-              position: "relative",
-              borderRadius: 12,
-              boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: pixels.width,
-                height: pixels.height,
-                transform: `scale(${scale})`,
-                transformOrigin: "top left",
-                background: "transparent",
-              }}
-            >
-              <div
-                ref={previewRef}
-                data-export-root="1"
-                dir={project.ui?.layoutDirection === "rtl" ? "rtl" : "ltr"}
-                style={{
-                  width: pixels.width,
-                  height: pixels.height,
-                  position: "relative",
-                  background: "transparent",
-                  overflow: "hidden",
-                  color: theme.colors.onSurface,
-                }}
-              >
-                {/* Editor-only: shows alpha; omitted from PNG/WebM/GIF capture via html-to-image filter */}
-                <div
-                  data-export-ignore="1"
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    zIndex: 0,
-                    backgroundColor: "#1e1e1e",
-                    backgroundImage: `
-                      linear-gradient(45deg, #333 25%, transparent 25%),
-                      linear-gradient(-45deg, #333 25%, transparent 25%),
-                      linear-gradient(45deg, transparent 75%, #333 75%),
-                      linear-gradient(-45deg, transparent 75%, #333 75%)`,
-                    backgroundSize: "12px 12px",
-                    backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0",
-                  }}
-                />
-                <div style={compositionLayerStyle}>
-                  <div
-                    style={{
-                      position: "relative",
-                      width: "100%",
-                      height: "100%",
-                      ...(compositionFilterCss ? { filter: compositionFilterCss } : {}),
-                      ...(liftShadowCss ? { boxShadow: liftShadowCss } : {}),
-                    }}
-                  >
-                    {sceneEffects.fireEnabled && (
-                      <FireCanvas
-                        width={pixels.width}
-                        height={pixels.height}
-                        intensity={sceneEffects.fireIntensity}
-                        heightFactor={sceneEffects.fireHeight}
-                        accentColor={fireAccent}
-                        playing={playing}
-                      />
-                    )}
-                    <StaggerShell
-                      enabled={sceneEffects.staggerEnabled}
-                      timeMs={timeMs}
-                      durationMs={durationMs}
-                      stepMs={sceneEffects.staggerStepMs}
-                      blendMs={sceneEffects.staggerBlendMs}
-                      motionTimeScale={motionTimeScale}
-                      templateId={project.template_id}
-                    >
-                      <TemplateComponent
-                        definition={entry.definition}
-                        fields={project.field_values}
-                        theme={theme}
-                        timeMs={timeMs}
-                        durationMs={durationMs}
-                        reducedMotion={reducedMotion}
-                        motionTimeScale={motionTimeScale}
-                        layoutDirection={project.ui?.layoutDirection === "rtl" ? "rtl" : "ltr"}
-                      />
-                    </StaggerShell>
-                  </div>
+        <InspectorCard title="Composition & motion" defaultOpen>
+          <CompositionInspectorBody
+            project={project}
+            updateProject={updateProject}
+            composition={composition}
+            patchComposition={patchComposition}
+            motionTimeScale={motionTimeScale}
+            reducedMotion={reducedMotion}
+          />
+        </InspectorCard>
+
+        <InspectorCard title="Scene effects">
+          <SceneEffectsInspectorBody sceneEffects={sceneEffects} patchEffects={patchEffects} />
+        </InspectorCard>
+
+        <InspectorCard title="Look & atmosphere">
+          <LookAtmosphereInspectorBody sceneEffects={sceneEffects} patchEffects={patchEffects} />
+        </InspectorCard>
+
+        <InspectorCard title="Brand & colors">
+          <BrandInspectorBody project={project} updateProject={updateProject} />
+        </InspectorCard>
+
+        <InspectorCard title="Overrides">
+          <OverridesInspectorBody project={project} updateProject={updateProject} />
+        </InspectorCard>
+
+        <InspectorCard title={`Fields · ${entry.definition.name}`} defaultOpen>
+          <FieldsInspectorBody
+            project={project}
+            updateProject={updateProject}
+            entry={entry}
+            validationIssues={validationIssues}
+          />
+        </InspectorCard>
+      </div>
+    </aside>
+  );
+
+  return (
+    <>
+      <div className="app-layout">
+        <TemplateTextFieldsDock
+          entry={entry}
+          project={project}
+          updateProject={updateProject}
+          validationIssues={validationIssues}
+        />
+        <div className="app-layout-main">
+          {isMobileLayout ? (
+            <MobileShell
+              templatesOpen={mobileTemplatesOpen}
+              adjustOpen={mobileAdjustOpen}
+              onToggleTemplates={toggleMobileTemplates}
+              onToggleAdjust={toggleMobileAdjust}
+              onCloseMenus={closeMobileMenus}
+              adjustSection={mobileAdjustSection}
+              onAdjustSectionChange={setMobileAdjustSection}
+              fieldsTemplateName={entry.definition.name}
+              preview={previewPanelEl}
+              templates={templatesPanelEl}
+              renderAdjustSection={renderAdjustSection}
+            />
+          ) : (
+            <div className="app-shell">
+              {templatesPanelEl}
+              {previewPanelEl}
+              {desktopInspector}
+              <footer className="bottom-bar">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button type="button" className="btn" onClick={exportJson}>
+                    Export project JSON
+                  </button>
+                  <button type="button" className="btn" onClick={importJson}>
+                    Import project JSON
+                  </button>
+                  <span className="chip">Autosave: IndexedDB</span>
+                  {saveError && <span className="save-warn">{saveError}</span>}
                 </div>
-                {(sceneEffects.vignetteEnabled ||
-                  sceneEffects.grainEnabled ||
-                  sceneEffects.lightSweepEnabled ||
-                  sceneEffects.confettiEnabled) && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      pointerEvents: "none",
-                      zIndex: 4,
-                    }}
-                  >
-                    {sceneEffects.vignetteEnabled && (
-                      <VignetteOverlay strength={sceneEffects.vignetteStrength} />
-                    )}
-                    {sceneEffects.grainEnabled && (
-                      <GrainCanvas
-                        width={pixels.width}
-                        height={pixels.height}
-                        opacity={sceneEffects.grainOpacity}
-                        playing={playing}
-                        timeMs={timeMs}
-                      />
-                    )}
-                    {sceneEffects.lightSweepEnabled && (
-                      <LightSweepCanvas
-                        width={pixels.width}
-                        height={pixels.height}
-                        opacity={sceneEffects.lightSweepOpacity}
-                        timeMs={timeMs}
-                        durationMs={durationMs}
-                        playing={playing}
-                      />
-                    )}
-                    {sceneEffects.confettiEnabled && (
-                      <ConfettiCanvas
-                        width={pixels.width}
-                        height={pixels.height}
-                        intensity={sceneEffects.confettiIntensity}
-                        playing={playing}
-                      />
-                    )}
-                  </div>
-                )}
-                {project.ui?.showSafeZones && project.canvas.aspectRatioId === "9:16" && (
-                  <SafeZonesOverlay width={pixels.width} height={pixels.height} />
-                )}
-              </div>
+                <button type="button" className="btn" onClick={onLicenses}>
+                  Licenses / notices
+                </button>
+              </footer>
             </div>
-          </div>
+          )}
         </div>
-      </main>
+      </div>
 
-      <aside className="panel panel-right">
-        <div className="panel-right-inner">
-          <InspectorCard title="Canvas" defaultOpen>
-            <div className="field field-compact">
-              <label>Aspect</label>
-              <select
-                value={project.canvas.aspectRatioId}
-                onChange={(e) =>
-                  updateProject({
-                    canvas: {
-                      ...project.canvas,
-                      aspectRatioId: e.target.value as ProjectState["canvas"]["aspectRatioId"],
-                    },
-                  })
-                }
-              >
-                {ASPECT_RATIO_OPTIONS.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label>Resolution</label>
-              <select
-                value={project.canvas.resolutionId}
-                onChange={(e) =>
-                  updateProject({
-                    canvas: {
-                      ...project.canvas,
-                      resolutionId: e.target.value as ProjectState["canvas"]["resolutionId"],
-                    },
-                  })
-                }
-              >
-                {RESOLUTION_OPTIONS.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label>FPS</label>
-              <select
-                value={project.canvas.fps}
-                onChange={(e) =>
-                  updateProject({
-                    canvas: { ...project.canvas, fps: Number(e.target.value) as ProjectState["canvas"]["fps"] },
-                  })
-                }
-              >
-                {FPS_OPTIONS.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label>Duration (ms)</label>
-              <input
-                type="number"
-                min={500}
-                max={120000}
-                step={100}
-                value={durationMs}
-                onChange={(e) =>
-                  updateProject({ scene_duration_ms: Number(e.target.value) || entry.definition.defaultDurationMs })
-                }
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={project.ui?.showSafeZones ?? false}
-                onChange={(e) => updateProject({ ui: { ...project.ui, showSafeZones: e.target.checked } })}
-                disabled={project.canvas.aspectRatioId !== "9:16"}
-              />
-              Safe zones (9:16)
-            </label>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={project.ui?.layoutDirection === "rtl"}
-                onChange={(e) =>
-                  updateProject({ ui: { ...project.ui, layoutDirection: e.target.checked ? "rtl" : "ltr" } })
-                }
-              />
-              RTL layout
-            </label>
-          </InspectorCard>
-
-          <InspectorCard title="Composition & motion" defaultOpen>
-            <p className="inspector-card-hint">
-              <strong>Intensity</strong> scales how long moves and fades take (whole scene + template layers) and how strong
-              zoom-in / zoom-out is. Use <strong>Slide</strong> or <strong>Zoom</strong> enter/exit to see it clearly; pure{" "}
-              <strong>Fade</strong> only changes fade speed. The chip is the live multiplier (Low ≈ 0.4×, High ≈ 1.75×; OS
-              “reduce motion” compresses the range).
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 8 }}>
-              <span className="chip">
-                Motion ×{motionTimeScale.toFixed(2)}
-                {reducedMotion ? " · OS reduced" : ""}
-              </span>
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="motion-int">Motion intensity</label>
-              <select
-                id="motion-int"
-                value={project.brand_kit.motionIntensity}
-                onChange={(e) =>
-                  updateProject({
-                    brand_kit: {
-                      ...project.brand_kit,
-                      motionIntensity: e.target.value as ProjectState["brand_kit"]["motionIntensity"],
-                    },
-                  })
-                }
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="comp-enter">Enter</label>
-              <select
-                id="comp-enter"
-                value={composition.enterStyle}
-                onChange={(e) => patchComposition({ enterStyle: e.target.value as CompositionStylePreset })}
-              >
-                {COMPOSITION_ENTER_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="comp-exit">Exit</label>
-              <select
-                id="comp-exit"
-                value={composition.exitStyle}
-                onChange={(e) => patchComposition({ exitStyle: e.target.value as CompositionStylePreset })}
-              >
-                {COMPOSITION_EXIT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="comp-x">Position X {composition.offsetXPercent}%</label>
-              <input
-                id="comp-x"
-                type="range"
-                min={-50}
-                max={50}
-                step={1}
-                value={composition.offsetXPercent}
-                onChange={(e) => patchComposition({ offsetXPercent: Number(e.target.value) })}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="comp-y">Position Y {composition.offsetYPercent}%</label>
-              <input
-                id="comp-y"
-                type="range"
-                min={-50}
-                max={50}
-                step={1}
-                value={composition.offsetYPercent}
-                onChange={(e) => patchComposition({ offsetYPercent: Number(e.target.value) })}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="comp-scale">Scale {composition.uniformScale.toFixed(2)}×</label>
-              <input
-                id="comp-scale"
-                type="range"
-                min={35}
-                max={200}
-                step={1}
-                value={Math.round(composition.uniformScale * 100)}
-                onChange={(e) => patchComposition({ uniformScale: Number(e.target.value) / 100 })}
-              />
-            </div>
-            <button type="button" className="btn btn-compact" onClick={() => patchComposition({ ...DEFAULT_COMPOSITION })}>
-              Reset composition
-            </button>
-          </InspectorCard>
-
-          <InspectorCard title="Scene effects">
-            <p className="inspector-card-hint">Stagger targets layers in each template; glow and fire export with the preview.</p>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.staggerEnabled}
-                onChange={(e) => patchEffects({ staggerEnabled: e.target.checked })}
-              />
-              Stagger layers
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-stagger-step">Stagger step (ms)</label>
-              <input
-                id="fx-stagger-step"
-                type="number"
-                min={20}
-                max={800}
-                step={10}
-                value={sceneEffects.staggerStepMs}
-                onChange={(e) => patchEffects({ staggerStepMs: Number(e.target.value) || 100 })}
-                disabled={!sceneEffects.staggerEnabled}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-stagger-blend">Stagger blend (ms)</label>
-              <input
-                id="fx-stagger-blend"
-                type="number"
-                min={40}
-                max={2000}
-                step={20}
-                value={sceneEffects.staggerBlendMs}
-                onChange={(e) => patchEffects({ staggerBlendMs: Number(e.target.value) || 380 })}
-                disabled={!sceneEffects.staggerEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.glowEnabled}
-                onChange={(e) => patchEffects({ glowEnabled: e.target.checked })}
-              />
-              Glow
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-glow-blur">Glow blur (px)</label>
-              <input
-                id="fx-glow-blur"
-                type="number"
-                min={2}
-                max={80}
-                step={1}
-                value={sceneEffects.glowBlurPx}
-                onChange={(e) => patchEffects({ glowBlurPx: Number(e.target.value) || 14 })}
-                disabled={!sceneEffects.glowEnabled}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-glow-spread">Glow layers</label>
-              <input
-                id="fx-glow-spread"
-                type="number"
-                min={1}
-                max={8}
-                step={1}
-                value={sceneEffects.glowSpread}
-                onChange={(e) => patchEffects({ glowSpread: Number(e.target.value) || 2 })}
-                disabled={!sceneEffects.glowEnabled}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-glow-color">Glow color</label>
-              <input
-                id="fx-glow-color"
-                type="color"
-                value={sceneEffects.glowColor}
-                onChange={(e) => patchEffects({ glowColor: e.target.value })}
-                disabled={!sceneEffects.glowEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.fireEnabled}
-                onChange={(e) => patchEffects({ fireEnabled: e.target.checked })}
-              />
-              Fire (particles)
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-fire-int">Density</label>
-              <input
-                id="fx-fire-int"
-                type="range"
-                min={1}
-                max={20}
-                step={1}
-                value={sceneEffects.fireIntensity}
-                onChange={(e) => patchEffects({ fireIntensity: Number(e.target.value) })}
-                disabled={!sceneEffects.fireEnabled}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-fire-h">Height</label>
-              <input
-                id="fx-fire-h"
-                type="range"
-                min={1}
-                max={10}
-                step={1}
-                value={sceneEffects.fireHeight}
-                onChange={(e) => patchEffects({ fireHeight: Number(e.target.value) })}
-                disabled={!sceneEffects.fireEnabled}
-              />
-            </div>
-          </InspectorCard>
-
-          <InspectorCard title="Look & atmosphere">
-            <p className="inspector-card-hint">
-              Vignette, grain, sweep, and confetti sit over the full frame. Lift shadow and filters apply to the graphic
-              layer (exports with preview).
-            </p>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.vignetteEnabled}
-                onChange={(e) => patchEffects({ vignetteEnabled: e.target.checked })}
-              />
-              Vignette
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-vig">Vignette strength</label>
-              <input
-                id="fx-vig"
-                type="range"
-                min={8}
-                max={95}
-                value={sceneEffects.vignetteStrength}
-                onChange={(e) => patchEffects({ vignetteStrength: Number(e.target.value) })}
-                disabled={!sceneEffects.vignetteEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.grainEnabled}
-                onChange={(e) => patchEffects({ grainEnabled: e.target.checked })}
-              />
-              Film grain
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-grain">Grain opacity</label>
-              <input
-                id="fx-grain"
-                type="range"
-                min={4}
-                max={55}
-                value={sceneEffects.grainOpacity}
-                onChange={(e) => patchEffects({ grainOpacity: Number(e.target.value) })}
-                disabled={!sceneEffects.grainEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.liftShadowEnabled}
-                onChange={(e) => patchEffects({ liftShadowEnabled: e.target.checked })}
-              />
-              Lift shadow
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-lift-blur">Shadow blur</label>
-              <input
-                id="fx-lift-blur"
-                type="range"
-                min={6}
-                max={80}
-                value={sceneEffects.liftShadowBlur}
-                onChange={(e) => patchEffects({ liftShadowBlur: Number(e.target.value) })}
-                disabled={!sceneEffects.liftShadowEnabled}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-lift-op">Shadow opacity</label>
-              <input
-                id="fx-lift-op"
-                type="range"
-                min={8}
-                max={90}
-                value={sceneEffects.liftShadowOpacity}
-                onChange={(e) => patchEffects({ liftShadowOpacity: Number(e.target.value) })}
-                disabled={!sceneEffects.liftShadowEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.lightSweepEnabled}
-                onChange={(e) => patchEffects({ lightSweepEnabled: e.target.checked })}
-              />
-              Light sweep
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-sweep-op">Sweep opacity</label>
-              <input
-                id="fx-sweep-op"
-                type="range"
-                min={5}
-                max={70}
-                value={sceneEffects.lightSweepOpacity}
-                onChange={(e) => patchEffects({ lightSweepOpacity: Number(e.target.value) })}
-                disabled={!sceneEffects.lightSweepEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.confettiEnabled}
-                onChange={(e) => patchEffects({ confettiEnabled: e.target.checked })}
-              />
-              Confetti
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-conf">Confetti amount</label>
-              <input
-                id="fx-conf"
-                type="range"
-                min={1}
-                max={18}
-                value={sceneEffects.confettiIntensity}
-                onChange={(e) => patchEffects({ confettiIntensity: Number(e.target.value) })}
-                disabled={!sceneEffects.confettiEnabled}
-              />
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={sceneEffects.chromaticEnabled}
-                onChange={(e) => patchEffects({ chromaticEnabled: e.target.checked })}
-              />
-              Chromatic aberration
-            </label>
-            <div className="field field-compact">
-              <label htmlFor="fx-chrome">Fringe (px)</label>
-              <input
-                id="fx-chrome"
-                type="range"
-                min={1}
-                max={60}
-                step={1}
-                value={Math.round(sceneEffects.chromaticAmount * 10)}
-                onChange={(e) => patchEffects({ chromaticAmount: Number(e.target.value) / 10 })}
-                disabled={!sceneEffects.chromaticEnabled}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-sat">Saturation {sceneEffects.gradeSaturation}%</label>
-              <input
-                id="fx-sat"
-                type="range"
-                min={60}
-                max={160}
-                value={sceneEffects.gradeSaturation}
-                onChange={(e) => patchEffects({ gradeSaturation: Number(e.target.value) })}
-              />
-            </div>
-            <div className="field field-compact">
-              <label htmlFor="fx-con">Contrast {sceneEffects.gradeContrast}%</label>
-              <input
-                id="fx-con"
-                type="range"
-                min={70}
-                max={140}
-                value={sceneEffects.gradeContrast}
-                onChange={(e) => patchEffects({ gradeContrast: Number(e.target.value) })}
-              />
-            </div>
-          </InspectorCard>
-
-          <InspectorCard title="Brand & colors">
-            {(
-              [
-                ["primary", "Primary"],
-                ["secondary", "Secondary"],
-                ["surface", "Surface"],
-                ["onSurface", "On surface"],
-                ["accent", "Accent"],
-                ["muted", "Muted"],
-              ] as const
-            ).map(([key, label]) => (
-              <div className="field field-compact" key={key}>
-                <label>{label}</label>
-                <input
-                  type="color"
-                  value={project.brand_kit.colors[key]}
-                  onChange={(e) =>
-                    updateProject({
-                      brand_kit: { ...project.brand_kit, colors: { ...project.brand_kit.colors, [key]: e.target.value } },
-                    })
-                  }
-                />
-              </div>
-            ))}
-            <div className="field field-compact">
-              <label>Display font</label>
-              <select
-                value={project.brand_kit.typography.display.fontId}
-                onChange={(e) =>
-                  updateProject({
-                    brand_kit: {
-                      ...project.brand_kit,
-                      typography: {
-                        ...project.brand_kit.typography,
-                        display: { ...project.brand_kit.typography.display, fontId: e.target.value },
-                      },
-                    },
-                  })
-                }
-              >
-                {FONT_CATALOG.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label>Body font</label>
-              <select
-                value={project.brand_kit.typography.body.fontId}
-                onChange={(e) =>
-                  updateProject({
-                    brand_kit: {
-                      ...project.brand_kit,
-                      typography: {
-                        ...project.brand_kit.typography,
-                        body: { ...project.brand_kit.typography.body, fontId: e.target.value },
-                      },
-                    },
-                  })
-                }
-              >
-                {FONT_CATALOG.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label>Accent font</label>
-              <select
-                value={project.brand_kit.typography.accent.fontId}
-                onChange={(e) =>
-                  updateProject({
-                    brand_kit: {
-                      ...project.brand_kit,
-                      typography: {
-                        ...project.brand_kit.typography,
-                        accent: { ...project.brand_kit.typography.accent, fontId: e.target.value },
-                      },
-                    },
-                  })
-                }
-              >
-                {FONT_CATALOG.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field field-compact">
-              <label>Font scale</label>
-              <input
-                type="number"
-                step={0.05}
-                min={0.5}
-                max={2}
-                value={project.brand_kit.fontScale}
-                onChange={(e) =>
-                  updateProject({ brand_kit: { ...project.brand_kit, fontScale: Number(e.target.value) || 1 } })
-                }
-              />
-            </div>
-          </InspectorCard>
-
-          <InspectorCard title="Overrides">
-            <p className="inspector-card-hint">Per-template accent (does not change the global kit).</p>
-            <div className="field field-compact">
-              <label>Accent override</label>
-              <input
-                type="color"
-                value={project.template_overrides?.colors?.accent ?? project.brand_kit.colors.accent}
-                onChange={(e) =>
-                  updateProject({
-                    template_overrides: {
-                      ...project.template_overrides,
-                      colors: { ...project.template_overrides?.colors, accent: e.target.value },
-                    },
-                  })
-                }
-              />
-            </div>
-            <button type="button" className="btn btn-compact" onClick={() => updateProject({ template_overrides: {} })}>
-              Clear overrides
-            </button>
-          </InspectorCard>
-
-          <InspectorCard title={`Fields · ${entry.definition.name}`} defaultOpen>
-            {validationIssues.length > 0 && (
-              <div className="error-banner">
-                {validationIssues.map((i) => (
-                  <div key={i.key}>
-                    {i.key}: {i.message}
-                  </div>
-                ))}
-              </div>
-            )}
-            {entry.definition.fields.map((f) => (
-              <div className="field field-compact" key={f.key}>
-                <label htmlFor={`f-${f.key}`}>{f.label}</label>
-                {f.type === "text" && (
-                  <input
-                    id={`f-${f.key}`}
-                    type="text"
-                    maxLength={f.maxLength}
-                    value={String(project.field_values[f.key] ?? "")}
-                    onChange={(e) =>
-                      updateProject({
-                        field_values: { ...project.field_values, [f.key]: e.target.value } as FieldValues,
-                      })
-                    }
-                  />
-                )}
-                {f.type === "color" && (
-                  <input
-                    id={`f-${f.key}`}
-                    type="color"
-                    value={String(project.field_values[f.key] ?? "#000000")}
-                    onChange={(e) =>
-                      updateProject({
-                        field_values: { ...project.field_values, [f.key]: e.target.value } as FieldValues,
-                      })
-                    }
-                  />
-                )}
-                {f.type === "number" && (
-                  <input
-                    id={`f-${f.key}`}
-                    type="number"
-                    min={f.min}
-                    max={f.max}
-                    value={Number(project.field_values[f.key] ?? f.default)}
-                    onChange={(e) =>
-                      updateProject({
-                        field_values: { ...project.field_values, [f.key]: Number(e.target.value) } as FieldValues,
-                      })
-                    }
-                  />
-                )}
-                {f.type === "boolean" && (
-                  <label className="check-row" style={{ marginBottom: 0 }}>
-                    <input
-                      id={`f-${f.key}`}
-                      type="checkbox"
-                      checked={Boolean(project.field_values[f.key])}
-                      onChange={(e) =>
-                        updateProject({
-                          field_values: { ...project.field_values, [f.key]: e.target.checked } as FieldValues,
-                        })
-                      }
-                    />
-                    On
-                  </label>
-                )}
-                {f.type === "enum" && f.options && (
-                  <select
-                    id={`f-${f.key}`}
-                    value={String(project.field_values[f.key] ?? f.default)}
-                    onChange={(e) =>
-                      updateProject({
-                        field_values: { ...project.field_values, [f.key]: e.target.value } as FieldValues,
-                      })
-                    }
-                  >
-                    {f.options.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            ))}
-          </InspectorCard>
-        </div>
-      </aside>
-
-      <footer className="bottom-bar">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <button type="button" className="btn" onClick={exportJson}>
-            Export project JSON
-          </button>
-          <button type="button" className="btn" onClick={importJson}>
-            Import project JSON
-          </button>
-          <span className="chip">Autosave: IndexedDB</span>
-          {saveError && <span className="save-warn">{saveError}</span>}
-        </div>
-        <button type="button" className="btn" onClick={() => alert("See THIRD_PARTY_NOTICES.md in the repository for font and icon attribution.")}>
-          Licenses / notices
-        </button>
-      </footer>
 
       {exportOpen && (
         <div
@@ -1427,6 +761,7 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+      <Toast message={toastMessage} onDismiss={dismissToast} />
+    </>
   );
 }
