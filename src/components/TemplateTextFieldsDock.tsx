@@ -10,11 +10,13 @@ export function TemplateTextFieldsDock({
   project,
   updateProject,
   validationIssues,
+  attentionKey,
 }: {
   entry: TemplateEntry;
   project: ProjectState;
   updateProject: (patch: Partial<ProjectState> | ((prev: ProjectState) => ProjectState)) => void;
   validationIssues: { key: string; message: string }[];
+  attentionKey: number;
 }) {
   const textFields = templateTextFieldDefs(entry);
   if (textFields.length === 0) return null;
@@ -33,7 +35,10 @@ export function TemplateTextFieldsDock({
           ))}
         </div>
       )}
-      <div className="template-fields-dock-scroll">
+      <div
+        key={attentionKey}
+        className={`template-fields-dock-scroll${attentionKey > 0 ? " template-fields-dock-scroll--attention" : ""}`}
+      >
         {textFields.map((f) => (
           <div className="template-fields-dock-item" key={f.key}>
             <label htmlFor={`f-${f.key}`}>{f.label}</label>

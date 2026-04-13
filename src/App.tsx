@@ -67,6 +67,7 @@ export default function App() {
   const [mobileAdjustOpen, setMobileAdjustOpen] = useState(false);
   const [mobileAdjustSection, setMobileAdjustSection] = useState<MobileAdjustSectionId | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [textDockAttentionKey, setTextDockAttentionKey] = useState(0);
 
   const reducedMotion = useMemo(
     () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -225,6 +226,9 @@ export default function App() {
   );
 
   const dismissToast = useCallback(() => setToastMessage(null), []);
+  const nudgeTextDockAttention = useCallback(() => {
+    setTextDockAttentionKey((k) => k + 1);
+  }, []);
   const onDesktopOnlyAspectToast = useCallback(() => {
     setToastMessage("Aspect ratio changes are available on desktop.");
   }, []);
@@ -474,6 +478,7 @@ export default function App() {
       fieldValues={project.field_values}
       showSafeZones={project.ui?.showSafeZones ?? false}
       effectiveAspectRatioId={effectiveAspectRatioId}
+      onCanvasPointerDown={nudgeTextDockAttention}
     />
   );
 
@@ -604,6 +609,7 @@ export default function App() {
           project={project}
           updateProject={updateProject}
           validationIssues={validationIssues}
+          attentionKey={textDockAttentionKey}
         />
         <div className="app-layout-main">
           {isMobileLayout ? (

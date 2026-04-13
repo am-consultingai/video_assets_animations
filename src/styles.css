@@ -78,6 +78,87 @@ body,
   scrollbar-gutter: stable;
 }
 
+.template-fields-dock-scroll--attention .template-fields-dock-item {
+  animation: text-fields-dock-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.template-fields-dock-scroll--attention .template-fields-dock-item label {
+  animation: text-fields-dock-label-glow 1000ms ease-out both;
+}
+
+.template-fields-dock-scroll--attention .template-fields-dock-item input[type="text"] {
+  animation: text-fields-dock-input-glow 1000ms ease-out both;
+}
+
+@keyframes text-fields-dock-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes text-fields-dock-label-glow {
+  0% {
+    color: var(--muted);
+    text-shadow: 0 0 0 transparent;
+  }
+  20% {
+    color: color-mix(in srgb, var(--accent) 70%, #e6faff);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 65%, transparent);
+  }
+  55% {
+    color: color-mix(in srgb, var(--accent) 55%, #dbeafe);
+    text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    color: var(--muted);
+    text-shadow: 0 0 0 transparent;
+  }
+}
+
+@keyframes text-fields-dock-input-glow {
+  0% {
+    border-color: var(--border);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  20% {
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+      0 0 12px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  55% {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
+      0 0 8px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-fields-dock-scroll--attention .template-fields-dock-item {
+    animation: none;
+  }
+  .template-fields-dock-scroll--attention .template-fields-dock-item label,
+  .template-fields-dock-scroll--attention .template-fields-dock-item input[type="text"] {
+    animation: none;
+  }
+}
+
 .template-fields-dock-item {
   display: flex;
   flex-direction: row;

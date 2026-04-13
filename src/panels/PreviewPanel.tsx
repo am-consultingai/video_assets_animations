@@ -39,6 +39,7 @@ export function PreviewPanel({
   fieldValues,
   showSafeZones,
   effectiveAspectRatioId,
+  onCanvasPointerDown,
 }: {
   previewRef: RefObject<HTMLDivElement | null>;
   pixels: { width: number; height: number };
@@ -64,6 +65,7 @@ export function PreviewPanel({
   fieldValues: TemplateRenderProps["fields"];
   showSafeZones: boolean;
   effectiveAspectRatioId: string;
+  onCanvasPointerDown: () => void;
 }) {
   const stageWrapRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
@@ -136,6 +138,7 @@ export function PreviewPanel({
               ref={previewRef}
               data-export-root="1"
               dir={projectRtl ? "rtl" : "ltr"}
+              onPointerDown={onCanvasPointerDown}
               style={{
                 width: pixels.width,
                 height: pixels.height,
