@@ -6,3 +6,4 @@ dist
 
 # Local documentation, BRD, reference HTML examples (not tracked)
 docs/
+tmp/
